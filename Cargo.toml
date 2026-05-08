@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "arbiter",
+]
+resolver = "2"

@@ -1,0 +1,20 @@
+
+[package]
+name = "agent-dispute"
+version = "0.1.0"
+edition = "2021"
+description = "Decentralized dispute resolution protocol for autonomous AI agents on Solana"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+solana-program = "~1.18"
+borsh = "0.10"
+thiserror = "2.0"
+
+[dev-dependencies]
+solana-program-test = "~1.18"
+solana-sdk = "~1.18"
+tokio = { version = "1", features = ["full"] }

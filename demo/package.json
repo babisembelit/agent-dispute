@@ -1,0 +1,20 @@
+{
+  "name": "agent-dispute-demo",
+  "version": "1.0.0",
+  "description": "Demo scripts for the Agent Dispute Protocol",
+  "scripts": {
+    "demo:happy": "ts-node src/happy_path.ts",
+    "demo:dispute": "ts-node src/dispute_flow.ts",
+    "demo:devnet": "ts-node src/devnet_demo.ts"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.87.0",
+    "agent-dispute-sdk": "file:../sdk",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2",
+    "@types/node": "^20.0.0"
+  }
+}
