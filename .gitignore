@@ -16,8 +16,10 @@ build/
 
 # ── Solana Keys — NEVER COMMIT PRIVATE KEYS ────────────────
 keys/
-*.json              # keypair files
-!package.json       # but keep package.json
+*-keypair.json
+*_keypair.json
+*wallet*.json
+id.json
 
 # ── macOS ───────────────────────────────────────────────────
 .DS_Store
