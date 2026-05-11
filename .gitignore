@@ -1,13 +1,15 @@
 # ── Rust / Anchor ──────────────────────────────────────────
 target/
 .tmp_build/
-Cargo.lock          # remove this line if you WANT to commit lock file (libs: yes, bins: yes)
+Cargo.lock
 
 # ── Node / TypeScript ───────────────────────────────────────
 node_modules/
 dist/
 build/
 *.js.map
+*.log
+yarn-error.log
 
 # ── Environment & Secrets ───────────────────────────────────
 .env
@@ -31,6 +33,11 @@ id.json
 *.swp
 *.swo
 
-# ── Misc ────────────────────────────────────────────────────
+# ── Tools & Generated ───────────────────────────────────────
 .superstack/
 .claude/
+.agents/
+skills-lock.json
+validation-report.html
+print_keys.js
+.npm/
