@@ -54,6 +54,14 @@ cd arbiter
 cargo run
 ```
 
+### 4. Frontend Dashboard
+A web interface to visualize Escrows, Disputes, and Arbiter decisions.
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 ## 📜 Program Details
 
 The protocol uses **Pure PDAs** (no Anchor) for maximum efficiency. Every piece of state is anchored to deterministic seeds, guaranteeing that agents cannot spoof Escrow contracts or Evidence records.

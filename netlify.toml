@@ -1,0 +1,13 @@
+[build]
+  # The directory to change to before starting the build
+  base = "frontend/"
+  
+  # The directory that contains the deploy-ready assets after building
+  publish = "dist/"
+  
+  # The command to run to build the site
+  command = "npm install && npm run build"
+
+[build.environment]
+  # Ensure we use a modern Node.js version
+  NODE_VERSION = "20"
