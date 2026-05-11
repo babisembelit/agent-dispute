@@ -1,13 +1,9 @@
 [build]
-  # The directory to change to before starting the build
-  base = "frontend/"
+  # Run build from the root to ensure SDK dependency is handled correctly
+  command = "cd sdk && npm install && npm run build && cd ../frontend && npm install && npm run build"
   
-  # The directory that contains the deploy-ready assets after building
-  publish = "dist/"
-  
-  # The command to run to build the site
-  command = "npm install && npm run build"
+  # Point to the distribution folder relative to the root
+  publish = "frontend/dist"
 
 [build.environment]
-  # Ensure we use a modern Node.js version
   NODE_VERSION = "20"
