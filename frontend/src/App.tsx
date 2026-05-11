@@ -133,7 +133,9 @@ function App() {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
+    // @ts-ignore
     <ConnectionProvider endpoint={endpoint}>
+      {/* @ts-ignore */}
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <Dashboard />
