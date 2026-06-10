@@ -33,9 +33,8 @@ impl SolanaService {
             &self.program_id,
             RpcProgramAccountsConfig {
                 filters: Some(vec![
-                    RpcFilterType::DataSize(DisputeAccount::LEN as u64),
                     RpcFilterType::Memcmp(Memcmp::new(
-                        217, // Offset for verdict
+                        401, // Offset for verdict (correctly calculated for current DisputeAccount)
                         MemcmpEncodedBytes::Bytes(vec![0u8]), // VERDICT_PENDING
                     )),
                 ]),
@@ -48,7 +47,10 @@ impl SolanaService {
             },
         ) {
             Ok(accs) => accs,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                eprintln!("Error fetching program accounts: {}", e);
+                return Vec::new();
+            }
         };
 
         accounts.into_iter()
@@ -93,7 +95,8 @@ impl SolanaService {
     ) -> Result<String, Box<dyn std::error::Error>> {
         let mut data = vec![5u8];
         data.push(vote);
-        data.push(100); // Confidence (hardcoded for now)
+        // TODO: derive confidence from LLM response (e.g. logprobs or self-reported score) instead of hardcoding 100
+        data.push(100);
         data.extend_from_slice(&reasoning_hash);
 
         let instruction = Instruction {

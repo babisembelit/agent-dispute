@@ -24,7 +24,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             for (pubkey, dispute) in pending {
                 println!("Found pending dispute: {}", pubkey);
-                
+
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                if now > dispute.deadline {
+                    println!("Dispute {} has expired (deadline {}), skipping.", pubkey, dispute.deadline);
+                    continue;
+                }
+
                 // Fetch live data for evaluation
                 let escrow = match solana_svc.get_escrow(&dispute.escrow) {
                     Ok(e) => e,
@@ -34,18 +44,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
+                if now > escrow.delivery_deadline {
+                    println!("Escrow {} delivery deadline {} has expired, skipping dispute {}.", dispute.escrow, escrow.delivery_deadline, pubkey);
+                    continue;
+                }
+
                 let evidence = solana_svc.get_evidence_records(&dispute.escrow);
                 let evidence_hashes: Vec<[u8; 32]> = evidence.iter().map(|e| e.content_hash).collect();
 
                 println!("Evaluating with Task Hash: {:?}, Criteria Hash: {:?}, Evidence Count: {}", 
                     escrow.task_hash, escrow.criteria_hash, evidence_hashes.len());
 
-                // Mock evaluation for demo
-                let result = crate::llm::EvaluationResult {
-                    vote: 2, // Winner = Agent B
-                    reasoning_hash: [5u8; 32],
+                let result = match llm_svc.evaluate_dispute(
+                    &escrow.task_hash,
+                    &escrow.criteria_hash,
+                    &evidence_hashes,
+                ).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("LLM evaluation failed for dispute {}: {}", pubkey, e);
+                        continue;
+                    }
                 };
-                println!("LLM evaluated (MOCK)! Vote: {}, Reasoning Hash: {:?}", result.vote, result.reasoning_hash);
+                println!("LLM evaluated! Vote: {}, Reasoning Hash: {:?}", result.vote, result.reasoning_hash);
                 
                 match solana_svc.submit_vote(&dispute.escrow, &pubkey, result.vote, result.reasoning_hash) {
                     Ok(sig) => {

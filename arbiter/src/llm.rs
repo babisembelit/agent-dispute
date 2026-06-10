@@ -38,6 +38,12 @@ pub struct EvaluationResult {
     pub reasoning_hash: [u8; 32],
 }
 
+#[derive(Deserialize)]
+struct LLMVoteResponse {
+    vote: u8,
+    reasoning: String,
+}
+
 impl LLMService {
     pub fn new(openai_key: Option<String>) -> Self {
         Self {
@@ -57,6 +63,8 @@ impl LLMService {
             // data (text/files) matching these hashes from decentralized storage (e.g. IPFS)
             // before sending to the LLM.
 
+            // MVP: hashes are passed as-is. In production these would be resolved to
+            // their actual content from IPFS/Arweave before being sent to the LLM.
             let prompt = format!(
                 "You are an AI Arbiter for the Agent Dispute Protocol.\n\
                  Task Hash: {:?}\nCriteria Hash: {:?}\nEvidence Hashes: {:?}\n\
@@ -82,13 +90,10 @@ impl LLMService {
             let openai_res: OpenAIResponse = res.json().await?;
             let content = &openai_res.choices[0].message.content;
 
-            // Basic parsing for MVP
-            let vote = if content.contains("\"vote\": 1") { 1 } else { 2 };
-            
-            // Hash the reasoning
-            let reasoning_hash = solana_sdk::hash::hash(content.as_bytes()).to_bytes();
+            let parsed: LLMVoteResponse = serde_json::from_str(content)?;
+            let reasoning_hash = solana_sdk::hash::hash(parsed.reasoning.as_bytes()).to_bytes();
 
-            Ok(EvaluationResult { vote, reasoning_hash })
+            Ok(EvaluationResult { vote: parsed.vote, reasoning_hash })
         } else {
             // Fallback mock if no API key
             let reasoning_hash = solana_sdk::hash::hash(b"Fallback Mock Reasoning").to_bytes();
