@@ -412,7 +412,7 @@ function Docket() {
       )}
       <div className="docket-grid">
         {shown.map((e) => (
-          <div className="reveal" key={e.pubkey.toBase58()}>
+          <div className="reveal in" key={e.pubkey.toBase58()}>
             <CaseCard escrow={e} />
           </div>
         ))}
