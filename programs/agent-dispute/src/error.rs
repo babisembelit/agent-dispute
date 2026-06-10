@@ -51,6 +51,9 @@ pub enum AgentDisputeError {
 
     #[error("Missing required signer")]
     MissingSigner = 15,
+
+    #[error("Arbiter is not registered in the arbiter registry")]
+    ArbiterNotRegistered = 16,
 }
 
 impl From<AgentDisputeError> for ProgramError {

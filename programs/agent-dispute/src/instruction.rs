@@ -1,4 +1,4 @@
-use solana_program::program_error::ProgramError;
+use solana_program::{program_error::ProgramError, pubkey::Pubkey};
 
 /// All instructions supported by the Agent Dispute Protocol program.
 #[derive(Debug)]
@@ -99,6 +99,26 @@ pub enum AgentDisputeInstruction {
     /// 2. `[writable]`          reputation_pda (created)
     /// 3. `[]`                  system_program
     InitializeReputation,
+
+    /// Register an arbiter by creating a registry PDA.
+    ///
+    /// Accounts:
+    /// 0. `[signer, writable]`  admin (pays for PDA creation)
+    /// 1. `[]`                  arbiter (the pubkey to whitelist)
+    /// 2. `[writable]`          arbiter_registry_pda (created)
+    /// 3. `[]`                  system_program
+    RegisterArbiter {
+        admin: Pubkey,
+    },
+
+    /// Submit respondent's counter-claim hash.
+    ///
+    /// Accounts:
+    /// 0. `[signer]`    respondent
+    /// 1. `[writable]`  dispute_pda
+    SubmitResponse {
+        response_hash: [u8; 32],
+    },
 }
 
 impl AgentDisputeInstruction {
@@ -187,6 +207,24 @@ impl AgentDisputeInstruction {
             }
             6 => Ok(Self::ExecuteVerdict),
             7 => Ok(Self::InitializeReputation),
+            8 => {
+                // RegisterArbiter: Pubkey = 32 bytes
+                if rest.len() < 32 {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+                let admin = Pubkey::try_from(&rest[0..32])
+                    .map_err(|_| ProgramError::InvalidInstructionData)?;
+                Ok(Self::RegisterArbiter { admin })
+            }
+            9 => {
+                // SubmitResponse: [u8;32] = 32 bytes
+                if rest.len() < 32 {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+                let mut response_hash = [0u8; 32];
+                response_hash.copy_from_slice(&rest[0..32]);
+                Ok(Self::SubmitResponse { response_hash })
+            }
             _ => Err(ProgramError::InvalidInstructionData),
         }
     }

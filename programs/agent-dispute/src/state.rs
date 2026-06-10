@@ -36,6 +36,7 @@ pub struct EscrowAccount {
     pub dispute_key: Pubkey,
     pub nonce: u64,
     pub bump: u8,
+    pub delivery_hash: [u8; 32],
 }
 
 impl EscrowAccount {
@@ -54,8 +55,9 @@ impl EscrowAccount {
         + 8           // delivered_at
         + 32          // dispute_key
         + 8           // nonce
-        + 1;          // bump
-    // = 211 bytes
+        + 1           // bump
+        + 32;         // delivery_hash
+    // = 243 bytes
 }
 
 // ─── Evidence ───────────────────────────────────────────────────────────────
@@ -217,6 +219,27 @@ impl ReputationAccount {
             self.score = Self::MIN_SCORE;
         }
     }
+}
+
+// ─── Arbiter Registry ───────────────────────────────────────────────────────
+
+/// Marks an address as a registered arbiter, created by an admin.
+/// PDA seeds: `[b"arbiter_registry", arbiter_pubkey]`
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
+pub struct ArbiterRegistry {
+    pub is_initialized: bool,
+    pub arbiter: Pubkey,
+    pub admin: Pubkey,
+    pub bump: u8,
+}
+
+impl ArbiterRegistry {
+    pub const LEN: usize =
+          1   // is_initialized
+        + 32  // arbiter
+        + 32  // admin
+        + 1;  // bump
+    // = 66 bytes
 }
 
 // ─── Winner Enum ────────────────────────────────────────────────────────────

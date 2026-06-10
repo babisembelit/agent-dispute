@@ -86,3 +86,8 @@ pub fn derive_evidence_pda(
 pub fn derive_reputation_pda(agent: &Pubkey, program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"reputation", agent.as_ref()], program_id)
 }
+
+/// Derive an arbiter registry PDA and bump.
+pub fn derive_arbiter_registry_pda(arbiter: &Pubkey, program_id: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"arbiter_registry", arbiter.as_ref()], program_id)
+}

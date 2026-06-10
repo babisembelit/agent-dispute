@@ -19,6 +19,11 @@ use crate::{
     validation::*,
 };
 
+const _: () = assert!(
+    DisputeAccount::MAX_ARBITERS >= 3,
+    "MAX_ARBITERS must be >= 3 to support required_votes = 3"
+);
+
 /// Main instruction dispatcher.
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -84,6 +89,14 @@ pub fn process_instruction(
         AgentDisputeInstruction::InitializeReputation => {
             msg!("Instruction: InitializeReputation");
             process_initialize_reputation(program_id, accounts)
+        }
+        AgentDisputeInstruction::RegisterArbiter { admin } => {
+            msg!("Instruction: RegisterArbiter");
+            process_register_arbiter(program_id, accounts, admin)
+        }
+        AgentDisputeInstruction::SubmitResponse { response_hash } => {
+            msg!("Instruction: SubmitResponse");
+            process_submit_response(program_id, accounts, response_hash)
         }
     }
 }
@@ -180,6 +193,7 @@ fn process_create_escrow(
         dispute_key: Pubkey::default(),
         nonce,
         bump: escrow_bump,
+        delivery_hash: [0u8; 32],
     };
 
     escrow.serialize(&mut &mut escrow_pda.data.borrow_mut()[..])?;
@@ -198,7 +212,7 @@ fn process_create_escrow(
 fn process_deliver_work(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
-    _evidence_hash: [u8; 32],
+    evidence_hash: [u8; 32],
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let agent_b = next_account_info(accounts_iter)?;
@@ -226,6 +240,7 @@ fn process_deliver_work(
 
     escrow.status = EscrowStatus::Delivered;
     escrow.delivered_at = clock.unix_timestamp;
+    escrow.delivery_hash = evidence_hash;
     escrow.serialize(&mut &mut escrow_pda.data.borrow_mut()[..])?;
 
     msg!("Work delivered by {}", agent_b.key);
@@ -384,7 +399,7 @@ fn process_file_dispute(
         bond_b: if is_agent_b { bond_amount } else { 0 },
         votes: [ArbiterVote::default(); 3],
         vote_count: 0,
-        required_votes: 1,
+        required_votes: 3,
         verdict: VERDICT_PENDING,
         consensus_pct: 0,
         filed_at: clock.unix_timestamp,
@@ -501,9 +516,20 @@ fn process_submit_arbiter_vote(
     let arbiter = next_account_info(accounts_iter)?;
     let dispute_pda = next_account_info(accounts_iter)?;
     let _escrow_pda = next_account_info(accounts_iter)?;
+    let arbiter_registry_pda = next_account_info(accounts_iter)?;
 
     assert_signer(arbiter)?;
     assert_owned_by(dispute_pda, program_id)?;
+
+    // Verify the arbiter is whitelisted
+    let (expected_registry, _) =
+        derive_arbiter_registry_pda(arbiter.key, program_id);
+    if arbiter_registry_pda.key != &expected_registry {
+        return Err(AgentDisputeError::ArbiterNotRegistered.into());
+    }
+    if arbiter_registry_pda.owner != program_id {
+        return Err(AgentDisputeError::ArbiterNotRegistered.into());
+    }
 
     let mut dispute =
         DisputeAccount::try_from_slice(&dispute_pda.data.borrow())?;
@@ -626,22 +652,30 @@ fn process_execute_verdict(
     let (expected_vault, _) = derive_vault_pda(escrow_pda.key, program_id);
     assert_account_key(vault_pda, &expected_vault)?;
 
-    // Distribute funds from vault
-    let vault_lamports = **vault_pda.lamports.borrow();
-
+    // Distribute funds from vault.
+    // The vault holds exactly escrow.amount + dispute.bond_a + dispute.bond_b.
+    // Winner receives: escrow amount + own bond (returned) + loser's bond (penalty).
     match dispute.verdict {
         VERDICT_AGENT_A => {
-            // Refund: all vault SOL goes to Agent A
-            **vault_pda.try_borrow_mut_lamports()? -= vault_lamports;
-            **agent_a.try_borrow_mut_lamports()? += vault_lamports;
+            let winner_amount = escrow.amount
+                .checked_add(dispute.bond_a)
+                .ok_or(AgentDisputeError::Overflow)?
+                .checked_add(dispute.bond_b)
+                .ok_or(AgentDisputeError::Overflow)?;
+            **vault_pda.try_borrow_mut_lamports()? -= winner_amount;
+            **agent_a.try_borrow_mut_lamports()? += winner_amount;
 
             update_reputation_account(reputation_a_pda, program_id, 5, true)?;
             update_reputation_account(reputation_b_pda, program_id, -10, false)?;
         }
         VERDICT_AGENT_B => {
-            // Pay: all vault SOL goes to Agent B
-            **vault_pda.try_borrow_mut_lamports()? -= vault_lamports;
-            **agent_b.try_borrow_mut_lamports()? += vault_lamports;
+            let winner_amount = escrow.amount
+                .checked_add(dispute.bond_b)
+                .ok_or(AgentDisputeError::Overflow)?
+                .checked_add(dispute.bond_a)
+                .ok_or(AgentDisputeError::Overflow)?;
+            **vault_pda.try_borrow_mut_lamports()? -= winner_amount;
+            **agent_b.try_borrow_mut_lamports()? += winner_amount;
 
             update_reputation_account(reputation_a_pda, program_id, -10, false)?;
             update_reputation_account(reputation_b_pda, program_id, 5, true)?;
@@ -687,6 +721,65 @@ fn update_reputation_account(
     rep.last_updated = clock.unix_timestamp;
     rep.serialize(&mut &mut rep_pda.data.borrow_mut()[..])?;
 
+    Ok(())
+}
+
+// ─── Register Arbiter ──────────────────────────────────────────────────────
+
+fn process_register_arbiter(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    admin: Pubkey,
+) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let admin_signer = next_account_info(accounts_iter)?;
+    let arbiter = next_account_info(accounts_iter)?;
+    let arbiter_registry_pda = next_account_info(accounts_iter)?;
+    let system_program = next_account_info(accounts_iter)?;
+
+    assert_signer(admin_signer)?;
+
+    // The admin in the instruction data must match the actual signer
+    if admin_signer.key != &admin {
+        return Err(AgentDisputeError::Unauthorized.into());
+    }
+
+    // Derive and verify registry PDA
+    let (expected_registry, registry_bump) =
+        derive_arbiter_registry_pda(arbiter.key, program_id);
+    assert_account_key(arbiter_registry_pda, &expected_registry)?;
+
+    // Create registry PDA account
+    let rent = Rent::get()?;
+    let registry_rent = rent.minimum_balance(ArbiterRegistry::LEN);
+    let registry_seeds: &[&[u8]] = &[
+        b"arbiter_registry",
+        arbiter.key.as_ref(),
+        &[registry_bump],
+    ];
+
+    invoke_signed(
+        &system_instruction::create_account(
+            admin_signer.key,
+            arbiter_registry_pda.key,
+            registry_rent,
+            ArbiterRegistry::LEN as u64,
+            program_id,
+        ),
+        &[admin_signer.clone(), arbiter_registry_pda.clone(), system_program.clone()],
+        &[registry_seeds],
+    )?;
+
+    let registry = ArbiterRegistry {
+        is_initialized: true,
+        arbiter: *arbiter.key,
+        admin: *admin_signer.key,
+        bump: registry_bump,
+    };
+
+    registry.serialize(&mut &mut arbiter_registry_pda.data.borrow_mut()[..])?;
+
+    msg!("Arbiter {} registered by admin {}", arbiter.key, admin_signer.key);
     Ok(())
 }
 
@@ -745,5 +838,43 @@ fn process_initialize_reputation(
     rep.serialize(&mut &mut reputation_pda.data.borrow_mut()[..])?;
 
     msg!("Reputation initialized for {}", agent.key);
+    Ok(())
+}
+
+// ─── Submit Response ───────────────────────────────────────────────────────
+
+fn process_submit_response(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    response_hash: [u8; 32],
+) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let respondent = next_account_info(accounts_iter)?;
+    let dispute_pda = next_account_info(accounts_iter)?;
+
+    assert_signer(respondent)?;
+    assert_owned_by(dispute_pda, program_id)?;
+
+    let mut dispute = DisputeAccount::try_from_slice(&dispute_pda.data.borrow())?;
+
+    if !dispute.is_initialized {
+        return Err(AgentDisputeError::NotInitialized.into());
+    }
+    if respondent.key != &dispute.respondent {
+        return Err(AgentDisputeError::Unauthorized.into());
+    }
+    if dispute.verdict != VERDICT_PENDING {
+        return Err(AgentDisputeError::InvalidStatus.into());
+    }
+
+    let clock = Clock::get()?;
+    if clock.unix_timestamp > dispute.deadline {
+        return Err(AgentDisputeError::VotingClosed.into());
+    }
+
+    dispute.response_hash = response_hash;
+    dispute.serialize(&mut &mut dispute_pda.data.borrow_mut()[..])?;
+
+    msg!("Response submitted by {}", respondent.key);
     Ok(())
 }
