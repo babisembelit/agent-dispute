@@ -41,3 +41,9 @@ skills-lock.json
 validation-report.html
 print_keys.js
 .npm/
+
+# ── Private / Grant Docs ─────────────────────────────────────
+GRANT_APPLICATION.md
+session_transcript.md
+submision-draft.md
+*_results.json
