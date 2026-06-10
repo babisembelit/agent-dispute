@@ -28,7 +28,7 @@ async function main() {
   console.log('Arbiter:', arbiter.publicKey.toBase58());
 
   const nonce = Math.floor(Math.random() * 1000000);
-  const amount = Math.floor(0.01111111111111 * LAMPORTS_PER_SOL);
+  const amount = Math.floor(0.005 * LAMPORTS_PER_SOL);
   const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
 
   const [escrowPda] = deriveEscrowPda(agentA.publicKey, agentB.publicKey, nonce);
