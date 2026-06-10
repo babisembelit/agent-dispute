@@ -23,4 +23,5 @@ export interface EscrowAccount {
   disputeKey: PublicKey;
   nonce: bigint;
   bump: number;
+  deliveryHash: Uint8Array;
 }

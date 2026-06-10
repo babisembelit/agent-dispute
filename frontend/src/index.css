@@ -235,6 +235,7 @@ body::after {
 .filter:hover { border-color: var(--line-2); color: var(--text); }
 .filter.active { color: var(--gold); border-color: var(--gold); background: oklch(0.82 0.115 80 / .08); }
 .docket-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 24px; }
+.docket-more { display: flex; justify-content: center; margin-top: 32px; }
 .case {
   border: 1px solid var(--line); border-radius: var(--r);
   background: linear-gradient(180deg, var(--bg-2), var(--bg));

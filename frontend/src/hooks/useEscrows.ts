@@ -75,7 +75,7 @@ export function useEscrows() {
           const bump = raw[offset];
           offset += 1;
 
-          // delivery_hash is stored but not needed by the frontend — skip 32 bytes
+          const deliveryHash = new Uint8Array(raw.slice(offset, offset + 32));
           offset += 32;
 
           return {
@@ -94,7 +94,8 @@ export function useEscrows() {
               deliveredAt,
               disputeKey,
               nonce,
-              bump
+              bump,
+              deliveryHash,
             }
           };
         });

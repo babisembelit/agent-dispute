@@ -4,7 +4,8 @@ import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-r
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl, Transaction, TransactionInstruction, SystemProgram, PublicKey } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
-import { derivePDA, sha256, u64ToLeBytes } from './utils/instructions';
+import { derivePDA, sha256, u64ToLeBytes, solscanUrl, shortHash, pinataUrl } from './utils/instructions';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
   Gavel, Shield, Activity, Scale, Lock, Database, Cpu, Send,
   ArrowRight, Plus, ExternalLink, Copy, RefreshCw,
@@ -116,22 +117,24 @@ function StatusChip({ status }: { status: EscrowStatus }) {
 }
 
 function Header() {
+  const { pathname } = useLocation();
+  const base = pathname === '/' ? '' : '/';
   return (
     <header className="site-header">
       <div className="wrap bar">
-        <div className="brand">
+        <Link to="/" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="mark"><Gavel size={20} /></div>
           <div className="name">
             Agent Dispute Protocol
             <span className="sub">Arbitration Protocol</span>
           </div>
-        </div>
+        </Link>
         <nav className="nav">
-          <a href="#process">Protocol</a>
-          <a href="#docket">Docket</a>
-          <a href="#jury">Arbiters</a>
-          <a href="#reputation">Reputation</a>
-          <a href="#faq">FAQ</a>
+          <a href={`${base}#process`}>Protocol</a>
+          <a href={`${base}#docket`}>Docket</a>
+          <a href={`${base}#jury`}>Arbiters</a>
+          <a href={`${base}#reputation`}>Reputation</a>
+          <a href={`${base}#faq`}>FAQ</a>
         </nav>
         <WalletMultiButton />
       </div>
@@ -163,6 +166,11 @@ function Hero() {
             <div className="t"><div className="v mono">99.2%</div><div className="k">Verdicts enforced on-chain</div></div>
             <div className="sep" />
             <div className="t"><div className="v mono">&lt; 4h</div><div className="k">Median resolution</div></div>
+          </div>
+          <div className="hero-ctas">
+            <Link to="/live-docket" className="btn btn-gold">
+              Live Docket <ArrowRight size={14} />
+            </Link>
           </div>
         </div>
         <div className="reveal in" style={{ transitionDelay: '.1s' }}>
@@ -269,6 +277,8 @@ function CaseCard({ escrow }: { escrow: ParsedEscrowItem }) {
   const worker = escrow.account.agentB.toBase58();
   const amountSol = Number(escrow.account.amount) / LAMPORTS_PER_SOL;
   const status = escrow.account.status;
+  const deliveryHash = escrow.account.deliveryHash;
+  const hasEvidence = deliveryHash.some(b => b !== 0);
 
   const programId = new PublicKey(PROGRAM_ID);
   const escrowPubkey = escrow.pubkey;
@@ -289,20 +299,47 @@ function CaseCard({ escrow }: { escrow: ParsedEscrowItem }) {
   const handleDeliverWork = async () => {
     if (!publicKey) return;
     try {
-      const evidenceHash = await sha256('delivery-proof-mvp');
+      // 1. Build evidence package
+      const evidencePackage = {
+        escrow: escrowPubkey.toBase58(),
+        agent: publicKey.toBase58(),
+        timestamp: new Date().toISOString(),
+        delivery: 'proof of work — replace with real output in production',
+      };
+
+      // 2. Upload JSON to Pinata
+      const jwt = import.meta.env.VITE_PINATA_JWT;
+      const pinataRes = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ pinataContent: evidencePackage }),
+      });
+      if (!pinataRes.ok) {
+        const text = await pinataRes.text();
+        throw new Error(`Pinata upload failed: ${text}`);
+      }
+      const { IpfsHash: cid } = await pinataRes.json() as { IpfsHash: string };
+
+      // 3. SHA-256 hash the CID string
+      const evidenceHash = await sha256(cid);
+
+      // 4. Build and send DeliverWork instruction (index 1)
       const data = new Uint8Array([1, ...evidenceHash]);
       const ix = new TransactionInstruction({
         programId,
         keys: [
-          { pubkey: publicKey,   isSigner: true,  isWritable: false },
-          { pubkey: escrowPubkey, isSigner: false, isWritable: true },
+          { pubkey: publicKey,    isSigner: true,  isWritable: false },
+          { pubkey: escrowPubkey, isSigner: false, isWritable: true  },
         ],
         data: Buffer.from(data),
       });
       const tx = new Transaction().add(ix);
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
-      alert('Work delivered!');
+      alert(`Work delivered!\nEvidence: https://gateway.pinata.cloud/ipfs/${cid}\nTx: ${solscanUrl(sig, 'tx')}`);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -330,7 +367,7 @@ function CaseCard({ escrow }: { escrow: ParsedEscrowItem }) {
       const tx = new Transaction().add(ix);
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
-      alert('Dispute filed!');
+      alert(`Dispute filed!\nView tx: ${solscanUrl(sig, 'tx')}`);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -339,32 +376,42 @@ function CaseCard({ escrow }: { escrow: ParsedEscrowItem }) {
   return (
     <div className="case">
       <div className="c-top">
-        <div className="c-id"><span className="pre"></span>{short(id)}</div>
+        <a className="c-id" href={solscanUrl(id)} target="_blank" rel="noreferrer">
+          <span className="pre"></span>{short(id)}<ExternalLink size={11} style={{ marginLeft: 4, opacity: 0.5 }} />
+        </a>
         <StatusChip status={status} />
       </div>
       <div className="parties">
         <div className="party">
           <div className="pl"><Avatar addr={hirer} /><span className="role">Hirer</span></div>
-          <span className="addr">{short(hirer)}</span>
+          <a className="addr" href={solscanUrl(hirer)} target="_blank" rel="noreferrer">{short(hirer)}</a>
         </div>
         <div className="party">
           <div className="pl"><Avatar addr={worker} /><span className="role">Worker</span></div>
-          <span className="addr">{short(worker)}</span>
+          <a className="addr" href={solscanUrl(worker)} target="_blank" rel="noreferrer">{short(worker)}</a>
         </div>
       </div>
       <div className="amount-row">
         <span className="al">In escrow</span>
         <span className="av">{amountSol.toFixed(4)}<span className="u">SOL</span></span>
       </div>
+      {hasEvidence && (
+        <div className="amount-row">
+          <span className="al">Evidence</span>
+          <a className="addr" href={pinataUrl(deliveryHash)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Database size={12} />{shortHash(deliveryHash)}<ExternalLink size={11} style={{ opacity: 0.5 }} />
+          </a>
+        </div>
+      )}
       <div className="progress">
         <div className="pl"><span>Dispute · jury</span><span>Status</span></div>
         <div className="bar"><i style={{ width: `${pct}%` }} /></div>
       </div>
       <div className="c-action">
         {status === EscrowStatus.Pending && isAgentB ? (
-          <button className="btn btn-primary" onClick={handleDeliverWork}>Deliver Work</button>
+          <button className="btn btn-gold" onClick={handleDeliverWork}>Deliver Work</button>
         ) : status === EscrowStatus.Delivered && isAgentA ? (
-          <button className="btn btn-primary" onClick={handleFileDispute}>File Dispute</button>
+          <button className="btn btn-gold" onClick={handleFileDispute}>File Dispute</button>
         ) : (
           <button className="btn btn-quiet" disabled>{actionLabel[status] ?? 'Unknown'}</button>
         )}
@@ -376,11 +423,15 @@ function CaseCard({ escrow }: { escrow: ParsedEscrowItem }) {
 function Docket() {
   const [filter, setFilter] = useState<'all' | 'disputed' | 'delivered' | 'resolved'>('all');
   const { escrows, loading, error } = useEscrows();
+  const { pathname } = useLocation();
 
   const shown = filter === 'all' ? escrows
     : filter === 'disputed'  ? escrows.filter((e) => e.account.status === EscrowStatus.Disputed)
     : filter === 'delivered' ? escrows.filter((e) => e.account.status === EscrowStatus.Delivered)
     : escrows.filter((e) => e.account.status === EscrowStatus.Completed);
+
+  const isPreview = pathname !== '/live-docket';
+  const capped = isPreview ? shown.slice(0, 6) : shown;
 
   const filters = ['all', 'disputed', 'delivered', 'resolved'] as const;
 
@@ -400,6 +451,11 @@ function Docket() {
               </button>
             ))}
           </div>
+          {pathname !== '/live-docket' && (
+            <Link to="/live-docket" className="btn btn-gold" style={{ whiteSpace: 'nowrap' }}>
+              Live Docket <ArrowRight size={14} />
+            </Link>
+          )}
         </div>
       </div>
       {error && (
@@ -411,12 +467,19 @@ function Docket() {
         <div className="empty-state" style={{ marginTop: 24 }}>No contracts found.</div>
       )}
       <div className="docket-grid">
-        {shown.map((e) => (
+        {capped.map((e) => (
           <div className="reveal in" key={e.pubkey.toBase58()}>
             <CaseCard escrow={e} />
           </div>
         ))}
       </div>
+      {isPreview && shown.length > 6 && (
+        <div className="docket-more">
+          <Link to="/live-docket" className="btn btn-gold">
+            View all {shown.length} contracts <ArrowRight size={14} />
+          </Link>
+        </div>
+      )}
     </section>
   );
 }
@@ -581,6 +644,27 @@ function Dashboard() {
   );
 }
 
+function LiveDocketPage() {
+  useReveal();
+  return (
+    <div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <Header />
+      <main>
+        <section className="wrap section" style={{ paddingTop: 48, paddingBottom: 8 }}>
+          <div className="section-head reveal">
+            <div className="eyebrow">On-chain explorer</div>
+            <h2>Live Docket</h2>
+            <p>Every active escrow, delivery and dispute — live from Solana devnet.</p>
+          </div>
+        </section>
+        <Docket />
+      </main>
+      <SiteFooter />
+    </div>
+  );
+}
+
 export default function App() {
   const endpoint = useMemo(() => clusterApiUrl('devnet'), []);
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
@@ -590,7 +674,10 @@ export default function App() {
       {/* @ts-ignore */}
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
-          <Dashboard />
+          <Routes>
+            <Route path="/"            element={<Dashboard />} />
+            <Route path="/live-docket" element={<LiveDocketPage />} />
+          </Routes>
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
