@@ -28,49 +28,51 @@ export function useEscrows() {
         });
 
         const parsedEscrows: ParsedEscrow[] = accounts.map(({ pubkey, account }) => {
-          const data = account.data;
+          const raw = account.data;
+          // Use DataView so this works in the browser (Buffer methods are Node-only)
+          const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
           let offset = 0;
 
-          const isInitialized = data[offset] === 1;
+          const isInitialized = raw[offset] === 1;
           offset += 1;
 
-          const agentA = new PublicKey(data.subarray(offset, offset + 32));
+          const agentA = new PublicKey(raw.slice(offset, offset + 32));
           offset += 32;
 
-          const agentB = new PublicKey(data.subarray(offset, offset + 32));
+          const agentB = new PublicKey(raw.slice(offset, offset + 32));
           offset += 32;
 
-          const amount = data.readBigUInt64LE(offset);
+          const amount = dv.getBigUint64(offset, true);
           offset += 8;
 
-          const taskHash = new Uint8Array(data.subarray(offset, offset + 32));
+          const taskHash = new Uint8Array(raw.slice(offset, offset + 32));
           offset += 32;
 
-          const criteriaHash = new Uint8Array(data.subarray(offset, offset + 32));
+          const criteriaHash = new Uint8Array(raw.slice(offset, offset + 32));
           offset += 32;
 
-          const deliveryDeadline = data.readBigInt64LE(offset);
+          const deliveryDeadline = dv.getBigInt64(offset, true);
           offset += 8;
 
-          const disputeWindow = data.readBigInt64LE(offset);
+          const disputeWindow = dv.getBigInt64(offset, true);
           offset += 8;
 
-          const status = data[offset] as EscrowStatus;
+          const status = raw[offset] as EscrowStatus;
           offset += 1;
 
-          const createdAt = data.readBigInt64LE(offset);
+          const createdAt = dv.getBigInt64(offset, true);
           offset += 8;
 
-          const deliveredAt = data.readBigInt64LE(offset);
+          const deliveredAt = dv.getBigInt64(offset, true);
           offset += 8;
 
-          const disputeKey = new PublicKey(data.subarray(offset, offset + 32));
+          const disputeKey = new PublicKey(raw.slice(offset, offset + 32));
           offset += 32;
 
-          const nonce = data.readBigUInt64LE(offset);
+          const nonce = dv.getBigUint64(offset, true);
           offset += 8;
 
-          const bump = data[offset];
+          const bump = raw[offset];
           offset += 1;
 
           // delivery_hash is stored but not needed by the frontend — skip 32 bytes
