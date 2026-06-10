@@ -12,6 +12,8 @@ pub struct Config {
     pub openai_api_key: Option<String>,
     pub anthropic_api_key: Option<String>,
     pub poll_interval_secs: u64,
+    pub ipfs_gateway: String,
+    pub pinata_token: Option<String>,
 }
 
 impl Config {
@@ -35,6 +37,10 @@ impl Config {
             .parse()
             .unwrap_or(5);
 
+        let ipfs_gateway = env::var("IPFS_GATEWAY")
+            .unwrap_or_else(|_| "https://ipfs.io".to_string());
+        let pinata_token = env::var("PINATA_GATEWAY_TOKEN").ok();
+
         Self {
             rpc_url,
             program_id,
@@ -42,6 +48,8 @@ impl Config {
             openai_api_key,
             anthropic_api_key,
             poll_interval_secs,
+            ipfs_gateway,
+            pinata_token,
         }
     }
 }

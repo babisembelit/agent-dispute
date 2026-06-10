@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use hex;
 
 pub struct LLMService {
     client: Client,
@@ -56,21 +57,24 @@ impl LLMService {
         &self,
         task_hash: &[u8],
         criteria_hash: &[u8],
-        evidence_hashes: &[[u8; 32]],
+        evidence_contents: &[String],
     ) -> Result<EvaluationResult, Box<dyn std::error::Error>> {
         if let Some(key) = &self.openai_key {
-            // For MVP, we pass the hashes. In a real system, we'd fetch the actual 
-            // data (text/files) matching these hashes from decentralized storage (e.g. IPFS)
-            // before sending to the LLM.
+            let evidence_text = evidence_contents
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("Evidence {}: {}", i + 1, c))
+                .collect::<Vec<_>>()
+                .join("\n");
 
-            // MVP: hashes are passed as-is. In production these would be resolved to
-            // their actual content from IPFS/Arweave before being sent to the LLM.
             let prompt = format!(
                 "You are an AI Arbiter for the Agent Dispute Protocol.\n\
-                 Task Hash: {:?}\nCriteria Hash: {:?}\nEvidence Hashes: {:?}\n\
-                 Analyze the evidence against the criteria. \n\
+                 Task Hash: {}\nCriteria Hash: {}\n\n{}\n\n\
+                 Analyze the evidence against the criteria.\n\
                  Reply strictly with a JSON object: {{\"vote\": 1, \"reasoning\": \"...\"}} where 1=Agent A wins, 2=Agent B wins.",
-                task_hash, criteria_hash, evidence_hashes
+                hex::encode(task_hash),
+                hex::encode(criteria_hash),
+                evidence_text,
             );
 
             let req_body = OpenAIRequest {

@@ -1,10 +1,12 @@
 pub mod config;
 pub mod solana;
 pub mod llm;
+pub mod ipfs;
 
 use std::time::Duration;
 use tokio::time::sleep;
 use solana_sdk::signature::Signer;
+use hex;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,6 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = config::Config::load();
     let solana_svc = solana::SolanaService::new(&cfg.rpc_url, &cfg.keypair_path, cfg.program_id);
     let llm_svc = llm::LLMService::new(cfg.openai_api_key.clone());
+    let ipfs_svc = ipfs::IpfsService::new(cfg.ipfs_gateway.clone(), cfg.pinata_token.clone());
 
     println!("Arbiter Pubkey: {}", solana_svc.keypair.pubkey());
     println!("Polling Solana every {} seconds...", cfg.poll_interval_secs);
@@ -52,13 +55,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let evidence = solana_svc.get_evidence_records(&dispute.escrow);
                 let evidence_hashes: Vec<[u8; 32]> = evidence.iter().map(|e| e.content_hash).collect();
 
-                println!("Evaluating with Task Hash: {:?}, Criteria Hash: {:?}, Evidence Count: {}", 
-                    escrow.task_hash, escrow.criteria_hash, evidence_hashes.len());
+                let mut evidence_contents: Vec<String> = Vec::new();
+                for hash in &evidence_hashes {
+                    match ipfs_svc.fetch_content(hash).await {
+                        Some(content) => evidence_contents.push(content),
+                        None => evidence_contents.push(format!(
+                            "[content unavailable for hash {}]",
+                            hex::encode(hash)
+                        )),
+                    }
+                }
+
+                println!("Evaluating with Task Hash: {:?}, Criteria Hash: {:?}, Evidence Count: {}",
+                    escrow.task_hash, escrow.criteria_hash, evidence_contents.len());
 
                 let result = match llm_svc.evaluate_dispute(
                     &escrow.task_hash,
                     &escrow.criteria_hash,
-                    &evidence_hashes,
+                    &evidence_contents,
                 ).await {
                     Ok(r) => r,
                     Err(e) => {
