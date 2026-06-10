@@ -20,10 +20,10 @@ export function useEscrows() {
     async function fetchEscrows() {
       try {
         setLoading(true);
-        // Fetch all accounts owned by the program with exactly 211 bytes (EscrowAccount size)
+        // Fetch all accounts owned by the program with exactly 243 bytes (EscrowAccount size)
         const accounts = await connection.getProgramAccounts(AGENT_DISPUTE_PROGRAM_ID, {
           filters: [
-            { dataSize: 211 }
+            { dataSize: 243 }
           ]
         });
 
@@ -72,6 +72,9 @@ export function useEscrows() {
 
           const bump = data[offset];
           offset += 1;
+
+          // delivery_hash is stored but not needed by the frontend — skip 32 bytes
+          offset += 32;
 
           return {
             pubkey,
